@@ -6,9 +6,9 @@ import (
 	"log"
 	"strconv"
 
-	"github.com/coopernurse/gorp"
 	"github.com/gin-gonic/gin"
 	_ "github.com/mattn/go-sqlite3"
+	"gopkg.in/gorp.v2"
 )
 
 var dbmap *gorp.DbMap
@@ -38,8 +38,11 @@ func initDatabase() *gorp.DbMap {
 	db, err := sql.Open("sqlite3", "db.sqlite3")
 	checkErr(err, "sql.Open failed")
 
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1000)
+	db.SetConnMaxLifetime(0)
 	// construct a gorp DbMap
-	dbmap := &gorp.DbMap{Db: db, Dialect: gorp.SqliteDialect{}}
+	dbmap = &gorp.DbMap{Db: db, Dialect: gorp.SqliteDialect{}}
 
 	// add a table, setting the table name to 'numbers' and
 	// specifying that the keys_id property is not an auto incrementing PK
@@ -85,6 +88,7 @@ func NumberUpdate(c *gin.Context) {
 				selected.Value = selected.Value + number.Value
 
 				_, err = dbmap.Update(&selected)
+
 				fmt.Printf("\nUpdate %#v %#v\n", number, selected)
 				if err == nil {
 					c.JSON(200, selected)
@@ -124,6 +128,7 @@ func NumberPost(c *gin.Context, number *Number) {
 func NumberList(c *gin.Context) {
 	var number []Number
 	_, err := dbmap.Select(&number, "SELECT * FROM numbers")
+
 	if err == nil {
 		c.JSON(200, number)
 	} else {
