@@ -34,8 +34,13 @@ func main() {
 
 }
 
+/*
+  initDatabase creates sqlite database that allows 1 open connection at a time to prevent
+  databse lock issues. Allows 1000 idle connections as a fail safe in case there is some
+  hold up. setting the lifetime to 0 means it won't time out.
+*/
 func initDatabase() *gorp.DbMap {
-	db, err := sql.Open("sqlite3", "db.sqlite3")
+	db, err := sql.Open("sqlite3", "./numbers.db")
 	checkErr(err, "sql.Open failed")
 
 	db.SetMaxOpenConns(1)
@@ -45,7 +50,7 @@ func initDatabase() *gorp.DbMap {
 	dbmap = &gorp.DbMap{Db: db, Dialect: gorp.SqliteDialect{}}
 
 	// add a table, setting the table name to 'numbers' and
-	// specifying that the keys_id property is not an auto incrementing PK
+	// specifying that the Key property is not an auto incrementing PK
 	dbmap.AddTableWithName(Number{}, "numbers").SetKeys(false, "Key")
 
 	// create the table. in a production system you'd generally
@@ -55,21 +60,25 @@ func initDatabase() *gorp.DbMap {
 	return dbmap
 }
 
+//checkErr simple error handling
 func checkErr(err error, msg string) {
 	if err != nil {
 		log.Fatalln(msg, err)
 	}
 }
 
-//NumberUpdate for incrementing values
+/*
+  NumberUpdate for incrementing values. If the item does not currently exist, the command
+  passes through to NumberPost
+*/
 func NumberUpdate(c *gin.Context) {
-	var number Number
-	var selected Number
-	number.Key = c.PostForm("key")
+	var number Number              //content from curl request
+	var selected Number            //content from db
+	number.Key = c.PostForm("key") //grab key value
 	if number.Key != "" {
 
-		var strVal = c.PostForm("value")
-		if strVal == "" {
+		var strVal = c.PostForm("value") //grab passed in value
+		if strVal == "" {                //if value is not present default to 1
 			strVal = "1"
 		}
 		var err error
@@ -77,7 +86,7 @@ func NumberUpdate(c *gin.Context) {
 		number.Value, err = strconv.ParseInt(strVal, 10, 64)
 
 		if err != nil {
-			panic(err)
+			checkErr(err, "error in converting string value to integer")
 		}
 
 		err = dbmap.SelectOne(&selected, "select * from numbers where Key=?", number.Key)
@@ -85,9 +94,9 @@ func NumberUpdate(c *gin.Context) {
 			log.Println("selected row:", selected)
 
 			if number.Key != "" {
-				selected.Value = selected.Value + number.Value
+				selected.Value = selected.Value + number.Value //increment value
 
-				_, err = dbmap.Update(&selected)
+				_, err = dbmap.Update(&selected) //update the value in the db
 
 				fmt.Printf("\nUpdate %#v %#v\n", number, selected)
 				if err == nil {
@@ -105,14 +114,17 @@ func NumberUpdate(c *gin.Context) {
 	//If key is not present in db calls NumberPost
 	// curl -X POST http://localhost:3333/increment -d 'key=abcdef&value=1'
 	// curl -X PUT http://localhost:3333/increment -d 'key=abcdef&value=1'
+	// curl -X PUT http://localhost:3333/increment -d 'key=abcdef'
 
 }
 
-//NumberPost Function for Posting new content to db
+/*
+  NumberPost Function for Posting new content to db
+*/
 func NumberPost(c *gin.Context, number *Number) {
 
 	fmt.Printf("\nPost %#v \n", number)
-	err := dbmap.Insert(number)
+	err := dbmap.Insert(number) //inserts the data gathered from NumberUpdate to the db
 	log.Println(err)
 	if err == nil {
 		c.JSON(201, &number)
@@ -123,8 +135,10 @@ func NumberPost(c *gin.Context, number *Number) {
 
 // curl -X POST http://localhost:3333/increment -d 'key=abcdef&value=1'
 
-//NumberList function for GET command
-//returns full db contents
+/*
+  NumberList function for GET command
+  returns full db contents
+*/
 func NumberList(c *gin.Context) {
 	var number []Number
 	_, err := dbmap.Select(&number, "SELECT * FROM numbers")
@@ -138,7 +152,9 @@ func NumberList(c *gin.Context) {
 
 }
 
-//DeleteNumber for removing entry from db
+/*
+  DeleteNumber for removing entry from db
+*/
 func DeleteNumber(c *gin.Context) {
 	var number Number
 	var selected Number
